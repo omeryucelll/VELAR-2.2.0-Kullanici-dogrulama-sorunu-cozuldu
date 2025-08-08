@@ -23,9 +23,21 @@ from enum import Enum
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# Timezone configuration
+from zoneinfo import ZoneInfo
+import time as _time
+IST_TZ = ZoneInfo("Europe/Istanbul")
+
+def now_ist() -> datetime:
+    return datetime.now(IST_TZ)
+
+os.environ.setdefault('TZ', 'Europe/Istanbul')
+if hasattr(_time, 'tzset'):
+    _time.tzset()
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+client = AsyncIOMotorClient(mongo_url, tz_aware=True, tzinfo=IST_TZ)
 db = client[os.environ['DB_NAME']]
 
 # Security
@@ -51,7 +63,7 @@ class User(BaseModel):
     username: str
     password_hash: str
     role: UserRole
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_ist)
 
 class UserCreate(BaseModel):
     username: str
@@ -67,7 +79,7 @@ class Project(BaseModel):
     name: str
     description: Optional[str] = None
     process_steps: List[str]  # Ordered list of process step names
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_ist)
     created_by: str
 
 class ProjectCreate(BaseModel):
@@ -81,7 +93,7 @@ class Part(BaseModel):
     project_id: str
     current_step_index: int = 0
     status: ProcessStatus = ProcessStatus.PENDING
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_ist)
 
 class PartWithStepInfo(BaseModel):
     id: str
@@ -109,13 +121,13 @@ class ProcessInstance(BaseModel):
     end_time: Optional[datetime] = None
     start_qr_code: str = Field(default_factory=lambda: str(uuid.uuid4()))
     end_qr_code: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_ist)
 
 class WorkOrderQRCode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     part_id: str
     qr_code: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=now_ist)
 
 class QRScanRequest(BaseModel):
     qr_code: str
@@ -155,7 +167,7 @@ def create_jwt_token(user_id: str, username: str, role: str) -> str:
         "user_id": user_id,
         "username": username,
         "role": role,
-        "exp": datetime.utcnow() + timedelta(hours=24)
+        "exp": int((now_ist() + timedelta(hours=24)).timestamp())
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
@@ -181,7 +193,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if exp is None:
             raise HTTPException(status_code=401, detail="Token has no expiration")
         
-        if datetime.utcnow() > datetime.fromtimestamp(exp):
+        if _time.time() > exp:
             raise HTTPException(status_code=401, detail="Token has expired")
             
         user = await db.users.find_one({"id": payload["user_id"]})
@@ -591,8 +603,7 @@ async def get_part_qr_codes_pdf(part_id: str, current_user: User = Depends(get_c
     draw_page.text((logo_right_edge, current_y + 25), system_title, fill=(0, 0, 0), font=font_header)
     
     # Draw current date in top right corner
-    from datetime import datetime
-    current_date = datetime.now().strftime("%d/%m/%Y")
+    current_date = now_ist().strftime("%d/%m/%Y")
     date_text = f"Tarih: {current_date}"
     date_width = draw_page.textlength(date_text, font=font_date)
     draw_page.text((page_width - margin - date_width, current_y + 25), date_text, fill=(0, 0, 0), font=font_date)
@@ -805,7 +816,7 @@ async def process_action(action_data: ProcessActionRequest, current_user: User =
             raise HTTPException(status_code=400, detail="Process already completed")
         
         # Start the process
-        now = datetime.utcnow()
+        now = now_ist()
         await db.process_instances.update_one(
             {"id": target_process.id},
             {
@@ -842,7 +853,7 @@ async def process_action(action_data: ProcessActionRequest, current_user: User =
             raise HTTPException(status_code=400, detail="Process must be started first")
         
         # Complete the process
-        now = datetime.utcnow()
+        now = now_ist()
         await db.process_instances.update_one(
             {"id": target_process.id},
             {
@@ -933,7 +944,7 @@ async def scan_start_qr(scan_data: QRScanRequest, current_user: User = Depends(g
         raise HTTPException(status_code=400, detail="Process already completed")
     
     # Start the process
-    now = datetime.utcnow()
+    now = now_ist()
     await db.process_instances.update_one(
         {"id": process.id},
         {
@@ -984,7 +995,7 @@ async def scan_end_qr(scan_data: QRScanRequest, current_user: User = Depends(get
         raise HTTPException(status_code=400, detail="Process must be started first")
     
     # Complete the process
-    now = datetime.utcnow()
+    now = now_ist()
     await db.process_instances.update_one(
         {"id": process.id},
         {
@@ -1221,6 +1232,14 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+for handler in logging.getLogger().handlers:
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    try:
+        # Use time.localtime which respects TZ we set above
+        formatter.converter = _time.localtime
+    except Exception:
+        pass
+    handler.setFormatter(formatter)
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
