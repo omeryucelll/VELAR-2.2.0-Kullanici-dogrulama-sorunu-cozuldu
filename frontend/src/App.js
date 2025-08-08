@@ -366,6 +366,7 @@ const OperatorScanner = () => {
   const [showProcessSelection, setShowProcessSelection] = useState(false);
   // New state for confirmation message
   const [showConfirmationMessage, setShowConfirmationMessage] = useState(false);
+  const [actionQuantity, setActionQuantity] = useState(1);
   
   const videoRef = React.useRef(null);
   const qrScannerRef = React.useRef(null);
@@ -497,6 +498,7 @@ const OperatorScanner = () => {
   // Handle process action (start or end)
   const handleProcessAction = async () => {
     if (!selectedProcess || !workOrderData || loading) return;
+    if (!Number.isFinite(actionQuantity) || actionQuantity < 1) return;
     
     setLoading(true);
     setError('');
@@ -508,7 +510,8 @@ const OperatorScanner = () => {
         username: user.username,
         password: 'session_authenticated',
         process_index: selectedProcess.step_index,
-        action: actionType
+        action: actionType,
+        quantity: actionQuantity,
       });
 
       setResult(response.data);
@@ -524,14 +527,13 @@ const OperatorScanner = () => {
         setShowProcessSelection(false);
         setQrCode('');
         setShowConfirmationMessage(false);
+        setActionQuantity(1);
         if (!manualMode && !isDialogShowing.current) {
           startCamera();
         }
       }, 3000);
     } catch (error) {
       setError(error.response?.data?.detail || 'Process action failed');
-      
-      // Auto-clear error after 5 seconds
       setTimeout(() => {
         setError('');
       }, 5000);
@@ -657,9 +659,14 @@ const OperatorScanner = () => {
                               {process.step_name}
                             </span>
                           </div>
-                          <Badge className={`${getStatusColor(process.status)} text-white`}>
-                            {process.status.replace('_', ' ').toUpperCase()}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge className={`${getStatusColor(process.status)} text-white`}>
+                              {process.status.replace('_', ' ').toUpperCase()}
+                            </Badge>
+                            <span className="text-xs text-gray-300">
+                              Bekleyen: {process.pending} • Devam: {process.in_progress} • Bitti: {process.completed} / {process.total}
+                            </span>
+                          </div>
                         </div>
                         {(process.can_start || process.can_end) && (
                           <div className="mt-2 text-xs text-blue-300">
@@ -707,6 +714,26 @@ const OperatorScanner = () => {
                         </Button>
                       )}
                     </div>
+                  </div>
+                )}
+                
+                {/* Quantity Selection */}
+                {selectedProcess && (
+                  <div>
+                    <label className="block text-sm font-medium text-white mb-2">
+                      Adet
+                    </label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={actionQuantity}
+                      onChange={(e) => setActionQuantity(parseInt(e.target.value || '1', 10))}
+                      className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      {actionType === 'start' ? `Başlatılabilir en fazla: ${selectedProcess?.pending || 0}` : `Bitirilebilir en fazla: ${selectedProcess?.in_progress || 0}`}
+                    </p>
                   </div>
                 )}
                 
@@ -1206,6 +1233,26 @@ const QRScanner = () => {
                 </div>
               )}
               
+              {/* Quantity Selection */}
+              {selectedProcess && (
+                <div>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    Adet
+                  </label>
+                  <Input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={actionQuantity}
+                    onChange={(e) => setActionQuantity(parseInt(e.target.value || '1', 10))}
+                    className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    {actionType === 'start' ? `Başlatılabilir en fazla: ${selectedProcess?.pending || 0}` : `Bitirilebilir en fazla: ${selectedProcess?.in_progress || 0}`}
+                  </p>
+                </div>
+              )}
+              
               {/* Submit Button */}
               <Button 
                 type="submit" 
@@ -1264,6 +1311,14 @@ const QRScanner = () => {
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [newPartNumber, setNewPartNumber] = useState('');
+  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedSteps, setSelectedSteps] = useState([]);
+  const [showStepSelector, setShowStepSelector] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
+  const [projectsWithParts, setProjectsWithParts] = useState([]);
+  const [loadingParts, setLoadingParts] = useState(false);
+  const [totalQuantity, setTotalQuantity] = useState(1);
 
   useEffect(() => {
     fetchDashboardData();
@@ -1465,18 +1520,25 @@ const Projects = () => {
       return;
     }
 
+    if (!Number.isFinite(totalQuantity) || totalQuantity < 1) {
+      alert('Üretilecek toplam miktar en az 1 olmalıdır');
+      return;
+    }
+
     try {
       // Create the work order within the selected project using custom steps
       await axios.post(`${API}/parts`, {
         part_number: newPartNumber,
         project_id: selectedProject,
-        process_steps: selectedSteps
+        process_steps: selectedSteps,
+        total_quantity: totalQuantity,
       });
       
       setNewPartNumber('');
       setSelectedProject('');
       setSelectedSteps([]);
       setShowStepSelector(false);
+      setTotalQuantity(1);
       fetchProjectsWithParts();
     } catch (error) {
       console.error('Failed to create part:', error);
@@ -1757,6 +1819,20 @@ const Projects = () => {
               )}
             </div>
             
+            <div>
+              <label className="text-sm font-medium text-white">Toplam Üretim Miktarı</label>
+              <p className="text-xs text-gray-400">Bu iş emri kapsamında üretilecek ürün adedi</p>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={totalQuantity}
+                onChange={(e) => setTotalQuantity(parseInt(e.target.value || '1', 10))}
+                className="mt-2 bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                required
+              />
+            </div>
+            
             <Button type="submit" className="bg-green-600 hover:bg-green-700">
               İş Emri Oluştur
             </Button>
@@ -1857,6 +1933,9 @@ const Projects = () => {
                             <span className="text-white font-medium">{part.part_number}</span>
                             <div className="text-sm text-gray-300 mt-1">
                               Adım: {part.current_step_index + 1} / {part.total_steps}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">
+                              Toplam Adet: {part.total_units} • Tamamlanan İşlem: {part.completed_instances}/{part.total_instances}
                             </div>
                           </div>
                           <Badge className={`${getStatusColor(part.status)} text-white`}>
@@ -2084,9 +2163,14 @@ const QRCodes = () => {
                               {step.step_name}
                             </span>
                           </div>
-                          <Badge className={`${getStatusColor(step.status)} text-white`}>
-                            {step.status.replace('_', ' ').toUpperCase()}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge className={`${getStatusColor(step.status)} text-white`}>
+                              {step.status.replace('_', ' ').toUpperCase()}
+                            </Badge>
+                            <span className="text-xs text-gray-300">
+                              Bekleyen: {step.pending} • Devam: {step.in_progress} • Bitti: {step.completed} / {step.total}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))}
