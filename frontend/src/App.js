@@ -9,6 +9,7 @@ import { Badge } from './components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { QrCode, Factory, Scan, Users, BarChart3, Settings, LogOut, Camera, CheckCircle, Clock, Play, Pause, Plus, X, ChevronUp, ChevronDown, List, Database, Download, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './components/ui/dialog';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -233,6 +234,114 @@ const Login = () => {
           </form>
         </CardContent>
       </Card>
+    </div>
+  );
+};
+
+// Change Password Page
+const ChangePassword = () => {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [successOpen, setSuccessOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (newPassword !== confirmPassword) {
+      setError('Yeni şifre ve doğrulama eşleşmiyor');
+      return;
+    }
+    try {
+      setLoading(true);
+      await axios.post(`${API}/users/change-password`, {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setSuccessOpen(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Şifre değiştirilemedi');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md bg-white/10 backdrop-blur-lg border-white/20">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl text-white">Şifre Değiştir</CardTitle>
+          <CardDescription className="text-gray-300">Hesap şifrenizi güncelleyin</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Input
+                type="password"
+                placeholder="Mevcut Şifre"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                required
+              />
+            </div>
+            <div>
+              <Input
+                type="password"
+                placeholder="Yeni Şifre"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                required
+              />
+            </div>
+            <div>
+              <Input
+                type="password"
+                placeholder="Yeni Şifre (Tekrar)"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+                required
+              />
+            </div>
+            {error && <div className="text-red-400 text-sm text-center">{error}</div>}
+            <div className="flex gap-2">
+              <Button 
+                type="button"
+                variant="outline"
+                className="w-1/3 border-white/20 text-white hover:bg-white/10"
+                onClick={() => navigate(-1)}
+              >Geri</Button>
+              <Button 
+                type="submit" 
+                className="w-2/3 bg-blue-600 hover:bg-blue-700"
+                disabled={loading}
+              >{loading ? 'Kaydediliyor...' : 'Şifreyi Değiştir'}</Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Dialog open={successOpen} onOpenChange={setSuccessOpen}>
+        <DialogContent className="bg-white/10 border-white/20 text-white">
+          <DialogHeader>
+            <DialogTitle>Başarılı</DialogTitle>
+            <DialogDescription className="text-gray-300">
+              Şifreniz başarıyla değiştirildi.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button onClick={() => { setSuccessOpen(false); navigate('/dashboard'); }} className="bg-blue-600 hover:bg-blue-700">Tamam</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
@@ -480,15 +589,25 @@ const OperatorScanner = () => {
               <p className="text-sm text-gray-300">Operator: {user?.username}</p>
             </div>
           </div>
-          <Button 
-            onClick={logout} 
-            variant="outline" 
-            size="sm"
-            className="border-white/20 text-white hover:bg-white/10"
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Çıkış Yap
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => window.location.href = '/change-password'} 
+              variant="outline" 
+              size="sm"
+              className="border-white/20 text-white hover:bg-white/10"
+            >
+              Şifre Değiştir
+            </Button>
+            <Button 
+              onClick={logout} 
+              variant="outline" 
+              size="sm"
+              className="border-white/20 text-white hover:bg-white/10"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Çıkış Yap
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -2285,15 +2404,25 @@ const MainApp = () => {
                 {user?.role?.toUpperCase() || 'USER'}
               </Badge>
               <span className="text-gray-300">Merhaba, {user?.username}</span>
-              <Button 
-                onClick={logout} 
-                variant="outline" 
-                size="sm"
-                className="border-white/20 text-white hover:bg-white/10"
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => window.location.href = '/change-password'} 
+                  variant="outline" 
+                  size="sm"
+                  className="border-white/20 text-white hover:bg-white/10"
+                >
+                  Şifre Değiştir
+                </Button>
+                <Button 
+                  onClick={logout} 
+                  variant="outline" 
+                  size="sm"
+                  className="border-white/20 text-white hover:bg-white/10"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Logout
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -2396,6 +2525,9 @@ function App() {
             } />
             <Route path="/dashboard" element={
               <ProtectedRoute element={<MainApp />} />
+            } />
+            <Route path="/change-password" element={
+              <ProtectedRoute element={<ChangePassword />} />
             } />
             <Route path="/operator" element={
               <ProtectedRoute element={<OperatorScanner />} requiredRoles={['operator']} />
