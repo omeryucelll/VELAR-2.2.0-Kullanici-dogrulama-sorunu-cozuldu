@@ -1108,6 +1108,85 @@ async def get_process_durations(current_user: User = Depends(get_current_user)):
     return duration_data
 
 # User Routes
+@api_router.post("/users/create")
+async def admin_create_user(user_data: UserCreate, current_user: User = Depends(get_current_user)):
+    """
+    Admin-only endpoint to create a new user with role manager or operator.
+    Returns standardized JSON: {"success": bool, "message": str, "user": {...}}
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Only allow creating manager or operator
+    if user_data.role not in [UserRole.MANAGER, UserRole.OPERATOR]:
+        raise HTTPException(status_code=400, detail="Invalid role. Only 'manager' or 'operator' can be created.")
+
+    # Ensure unique username
+    existing_user = await db.users.find_one({"username": user_data.username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    # Create user
+    hashed_password = hash_password(user_data.password)
+    new_user = User(
+        username=user_data.username,
+        password_hash=hashed_password,
+        role=user_data.role,
+    )
+    await db.users.insert_one(new_user.dict())
+
+    return {
+        "success": True,
+        "message": "User created successfully",
+        "user": {
+            "id": new_user.id,
+            "username": new_user.username,
+            "role": new_user.role,
+        },
+    }
+
+
+@api_router.get("/users")
+async def list_users(current_user: User = Depends(get_current_user)):
+    """
+    Admin-only endpoint to list all users except the current admin.
+    Returns: {"success": true, "users": [{id, username, role, created_at}]}
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    users = await db.users.find({"id": {"$ne": current_user.id}}).to_list(10000)
+    users_sanitized = [
+        {
+            "id": u["id"],
+            "username": u["username"],
+            "role": u["role"],
+            "created_at": u.get("created_at"),
+        }
+        for u in users
+    ]
+    return {"success": True, "users": users_sanitized}
+
+
+@api_router.delete("/users/{user_id}")
+async def delete_user(user_id: str, current_user: User = Depends(get_current_user)):
+    """
+    Admin-only endpoint to delete a user by id. Does not delete any historical production data.
+    Returns standardized JSON: {"success": bool, "message": str}
+    """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Prevent deleting self just in case frontend filter is bypassed
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete the currently logged-in admin user")
+
+    result = await db.users.delete_one({"id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"success": True, "message": "User deleted successfully"}
+
 @api_router.post("/users/change-password")
 async def change_password(change_password_data: ChangePasswordRequest, current_user: User = Depends(get_current_user)):
     """
