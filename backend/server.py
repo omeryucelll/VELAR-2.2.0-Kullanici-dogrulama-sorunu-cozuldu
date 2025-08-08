@@ -134,6 +134,10 @@ class ProcessActionRequest(BaseModel):
     process_index: int
     action: str  # "start" or "end"
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 # Create the main app
 app = FastAPI(title="Production Tracking System")
 api_router = APIRouter(prefix="/api")
@@ -1102,6 +1106,24 @@ async def get_process_durations(current_user: User = Depends(get_current_user)):
     duration_data.sort(key=lambda x: x["end_time"], reverse=True)
     
     return duration_data
+
+# User Routes
+@api_router.post("/users/change-password")
+async def change_password(change_password_data: ChangePasswordRequest, current_user: User = Depends(get_current_user)):
+    """
+    Change the current user's password.
+    """
+    if not verify_password(change_password_data.current_password, current_user.password_hash):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    
+    new_hashed_password = hash_password(change_password_data.new_password)
+    
+    await db.users.update_one(
+        {"id": current_user.id},
+        {"$set": {"password_hash": new_hashed_password}}
+    )
+    
+    return {"message": "Password changed successfully"}
 
 # Include the router in the main app
 app.include_router(api_router)
