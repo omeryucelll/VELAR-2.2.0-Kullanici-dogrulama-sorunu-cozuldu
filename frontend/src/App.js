@@ -889,7 +889,7 @@ const OperatorScanner = () => {
                     <div className="space-y-1 text-sm">
                       <p className="text-white font-medium">{result.message}</p>
                       <p className="text-green-200">Process Step: {result.step_name}</p>
-                      <p className="text-green-200">Time: {new Date().toLocaleTimeString()}</p>
+                      <p className="text-green-200">Time: {new Date().toLocaleTimeString('tr-TR', { timeZone: 'Europe/Istanbul' })}</p>
                     </div>
                   </div>
                 )}
@@ -1864,7 +1864,7 @@ const Projects = () => {
                           </Badge>
                         </div>
                         <div className="mt-2 text-xs text-gray-400">
-                          Oluşturuldu: {new Date(part.created_at).toLocaleDateString('tr-TR')}
+                          Oluşturuldu: {new Date(part.created_at).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}
                         </div>
                       </div>
                     ))}
@@ -2206,7 +2206,7 @@ const Veriler = () => {
   };
 
   const formatDateTime = (dateString) => {
-    return new Date(dateString).toLocaleString('tr-TR');
+    return new Date(dateString).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
   };
 
   if (error) {
